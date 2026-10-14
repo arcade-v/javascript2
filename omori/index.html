@@ -7,6 +7,7 @@
     href="https://fonts.googleapis.com/css2?family=Pixelify+Sans&display=swap"
     rel="stylesheet"
   >
+  <base href="https://cdn.jsdelivr.net/gh/arcade-v/javascript2/omori/">
 
   <style>
     html,
@@ -43,25 +44,25 @@
   <div id="loading-text">LOADING...</div>
 
   <script>
+    const BASE_URL =
+      'https://cdn.jsdelivr.net/gh/arcade-v/javascript2/omori/';
+
+    const PART_COUNT = 18;
+
+    let gameBlobURL = null;
+
     async function loadHTMLParts() {
       const loadingText = document.getElementById('loading-text');
-
-      const baseURL =
-        'https://cdn.jsdelivr.net/gh/arcade-v/javascript2/omori/';
-
-      const parts = Array.from(
-        { length: 18 },
-        (_, i) => `OMORI.html.part${i + 1}`
-      );
 
       try {
         let combinedHTML = '';
 
-        for (const part of parts) {
-          const url = baseURL + part;
+        for (let i = 1; i <= PART_COUNT; i++) {
+          const part = `OMORI.html.part${i}`;
+          const url = BASE_URL + part;
 
           loadingText.textContent =
-            `LOADING PART ${parts.indexOf(part) + 1}/${parts.length}...`;
+            `LOADING PART ${i}/${PART_COUNT}...`;
 
           console.log('Fetching:', url);
 
@@ -78,29 +79,57 @@
           combinedHTML += await response.text();
         }
 
-        const blob = new Blob(
+        loadingText.textContent = 'PREPARING GAME...';
+
+        combinedHTML = combinedHTML.replace(
+          /<base\b[^>]*>/gi,
+          ''
+        );
+
+        const baseTag = `<base href="${BASE_URL}">`;
+
+        if (/<head\b[^>]*>/i.test(combinedHTML)) {
+          combinedHTML = combinedHTML.replace(
+            /<head\b[^>]*>/i,
+            match => match + '\n' + baseTag
+          );
+        } else {
+          combinedHTML =
+            '<!DOCTYPE html><html><head>' +
+            baseTag +
+            '</head><body>' +
+            combinedHTML +
+            '</body></html>';
+        }
+
+        const gameBlob = new Blob(
           [combinedHTML],
           { type: 'text/html;charset=utf-8' }
         );
 
-        const blobURL = URL.createObjectURL(blob);
+        gameBlobURL = URL.createObjectURL(gameBlob);
 
         const iframe = document.createElement('iframe');
+
         iframe.id = 'game';
-        iframe.title = 'Game';
-        iframe.src = blobURL;
+        iframe.title = 'OMORI';
+        iframe.src = gameBlobURL;
         iframe.allow = 'autoplay; fullscreen; gamepad';
         iframe.allowFullscreen = true;
 
-        iframe.addEventListener('load', () => {
+        iframe.onload = () => {
           console.log('Game document loaded.');
-        });
+        };
+
+        iframe.onerror = () => {
+          console.error('The game iframe failed to load.');
+        };
 
         document.body.replaceChildren(iframe);
 
         const observer = new MutationObserver(() => {
           if (!iframe.isConnected) {
-            URL.revokeObjectURL(blobURL);
+            cleanup();
             observer.disconnect();
           }
         });
@@ -115,8 +144,14 @@
         loadingText.textContent =
           'FAILED TO LOAD GAME: ' + error.message;
 
-        loadingText.style.fontSize = '24px';
-        loadingText.style.padding = '20px';
+        loadingText.style.fontSize = '22px';
+      }
+    }
+
+    function cleanup() {
+      if (gameBlobURL) {
+        URL.revokeObjectURL(gameBlobURL);
+        gameBlobURL = null;
       }
     }
 
