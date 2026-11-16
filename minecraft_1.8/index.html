@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <link
     href="https://fonts.googleapis.com/css2?family=Pixelify+Sans&display=swap"
     rel="stylesheet"
@@ -16,6 +17,7 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
+      background: transparent;
     }
 
     #loading-text {
@@ -30,6 +32,7 @@
       text-align: center;
       padding: 20px;
       box-sizing: border-box;
+      white-space: pre-wrap;
     }
 
     #game {
@@ -94,9 +97,14 @@
 
             console.log(`[Part ${index + 1}] Loaded from:`, url);
 
-            return content;
+            return {
+              content,
+              baseURL: baseURLs[i]
+            };
+
           } catch (error) {
             lastError = error;
+
             console.warn(
               `[Part ${index + 1}] Source failed: ${url}`,
               error
@@ -112,43 +120,60 @@
 
       try {
         let combinedHTML = '';
+        let gameBaseURL = baseURLs[0];
 
         for (let i = 0; i < parts.length; i++) {
-          combinedHTML += await fetchPart(parts[i], i);
+          const result = await fetchPart(parts[i], i);
+
+          combinedHTML += result.content;
+
+          if (i === 0) {
+            gameBaseURL = result.baseURL;
+          }
         }
 
         loadingText.textContent = 'STARTING GAME...';
 
-        const blob = new Blob(
-          [combinedHTML],
-          { type: 'text/html;charset=utf-8' }
-        );
+        // Set the base URL for relative game resources.
+        const baseTag =
+          `<base href="${gameBaseURL.replace(/"/g, '&quot;')}">`;
 
-        const blobURL = URL.createObjectURL(blob);
+        if (/<head\b[^>]*>/i.test(combinedHTML)) {
+          combinedHTML = combinedHTML.replace(
+            /<head\b[^>]*>/i,
+            match => match + '\n' + baseTag
+          );
+        } else {
+          combinedHTML = baseTag + combinedHTML;
+        }
 
+        // Create the game iframe.
         const iframe = document.createElement('iframe');
+
         iframe.id = 'game';
-        iframe.title = 'Game';
-        iframe.src = blobURL;
+        iframe.title = 'Minecraft 1.8.8';
         iframe.allow = 'autoplay; fullscreen; gamepad';
         iframe.allowFullscreen = true;
 
+        // IMPORTANT:
+        // Use srcdoc instead of a Blob URL.
+        // This allows the unsandboxed iframe to inherit
+        // the embedding document's origin.
         iframe.addEventListener('load', () => {
           console.log('Game document loaded.');
         });
 
+        iframe.addEventListener('error', error => {
+          console.error('Game iframe error:', error);
+        });
+
         document.body.replaceChildren(iframe);
 
-        const observer = new MutationObserver(() => {
-          if (!iframe.isConnected) {
-            URL.revokeObjectURL(blobURL);
-            observer.disconnect();
-          }
-        });
+        iframe.srcdoc = combinedHTML;
 
-        observer.observe(document.body, {
-          childList: true
-        });
+        console.log('Game HTML assembled successfully.');
+        console.log('Game base URL:', gameBaseURL);
+        console.log('Using iframe.srcdoc instead of Blob URL.');
 
       } catch (error) {
         console.error('Error loading game:', error);
